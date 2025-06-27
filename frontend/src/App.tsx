@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calculator, History, User, LogIn, LogOut, Menu, X, Eye, EyeOff, ChevronDown, ChevronRight, BookOpen, Lightbulb, Clock, Trash2 } from 'lucide-react';
+import { SpeedInsights } from "@vercel/speed-insights/react"
 
 type UserType = { username: string; email: string; password?: string };
 
