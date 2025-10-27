@@ -64,7 +64,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Initialize Gemini AI with error handling and environment configuration
 let model;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash-exp";
 
 try {
   if (!process.env.GEMINI_API_KEY) {
