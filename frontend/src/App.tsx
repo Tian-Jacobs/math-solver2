@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Calculator, History, User, LogIn, LogOut, Menu, X, Eye, EyeOff, ChevronDown, ChevronRight, BookOpen, Lightbulb, Clock, Trash2 } from 'lucide-react';
 import { SpeedInsights } from "@vercel/speed-insights/react"
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 type UserType = { username: string; email: string; password?: string };
 
@@ -44,42 +46,37 @@ const MathSolver = () => {
   };
   const [calculations, setCalculations] = useState<CalculationType[]>([]);
 
-  // API Configuration
-  const API_BASE = 'https://math-solver2.onrender.com';
+  // API Configuration - use local backend in development, production URL otherwise
+  const API_BASE = process.env.REACT_APP_API_URL || 
+    (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://math-solver2.onrender.com');
 
-  // Initialize with sample data
+  // Load saved result from localStorage on mount
   useEffect(() => {
-    const sampleCalculations = [
-      {
-        id: 1,
-        userId: 'demo',
-        problem: 'Solve 3x + 2 = 14',
-        result: 'x = 4',
-        operation: 'solve',
-        timestamp: new Date(Date.now() - 86400000).toISOString(),
-        steps: [
-          'Subtract 2 from both sides: 3x + 2 - 2 = 14 - 2',
-          'Simplify: 3x = 12',
-          'Divide both sides by 3: 3x/3 = 12/3',
-          'Simplify: x = 4'
-        ]
-      },
-      {
-        id: 2,
-        userId: 'demo',
-        problem: 'Factor x^2 + 5x + 6',
-        result: '(x + 2)(x + 3)',
-        operation: 'factor',
-        timestamp: new Date(Date.now() - 43200000).toISOString(),
-        steps: [
-          'Look for two numbers that multiply to 6 and add to 5: The numbers are 2 and 3',
-          'Check: 2 × 3 = 6, 2 + 3 = 5 ✓',
-          'Write as factored form: (x + 2)(x + 3)',
-          'Verify by expanding: (x + 2)(x + 3) = x² + 3x + 2x + 6 = x² + 5x + 6 ✓'
-        ]
+    // Load saved result
+    const savedResult = localStorage.getItem('mathSolverResult');
+    if (savedResult) {
+      try {
+        setResult(JSON.parse(savedResult));
+      } catch (e) {
+        console.error('Failed to load saved result:', e);
       }
-    ];
-    setCalculations(sampleCalculations);
+    }
+
+    // Load saved problem
+    const savedProblem = localStorage.getItem('mathSolverProblem');
+    if (savedProblem) {
+      setProblem(savedProblem);
+    }
+
+    // Load calculations
+    const savedCalculations = localStorage.getItem('mathSolverCalculations');
+    if (savedCalculations) {
+      try {
+        setCalculations(JSON.parse(savedCalculations));
+      } catch (e) {
+        console.error('Failed to load calculations:', e);
+      }
+    }
     
     // Test server connection on mount
     testServerConnection();
@@ -101,10 +98,15 @@ const MathSolver = () => {
       if (response.ok) {
         setServerConnected(true);
         setConnectionStatus('connected');
+        console.log('✅ Server connected and AI is available');
       } else {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Server responded but AI is not available (503 or other error)
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Server health check failed:', response.status, errorData);
+        throw new Error(`Server unavailable: ${errorData.message || response.statusText}`);
       }
     } catch (error) {
+      console.error('❌ Connection test failed:', error);
       setServerConnected(false);
       setConnectionStatus('disconnected');
     }
@@ -176,21 +178,27 @@ const MathSolver = () => {
         
         setResult(processedResult);
         
-        // Save to history if user is logged in
-        if (currentUser) {
-          const newCalculation = {
-            id: Date.now(),
-            userId: currentUser.username,
-            problem: problem,
-            result: data.calculation.result,
-            operation: data.analysis.operation,
-            timestamp: new Date().toISOString(),
-            steps: Array.isArray(data.calculation.steps) 
-              ? data.calculation.steps 
-              : data.calculation.steps.split('\n').filter(step => step.trim())
-          };
-          setCalculations([newCalculation, ...calculations]);
-        }
+        // Save result to localStorage
+        localStorage.setItem('mathSolverResult', JSON.stringify(processedResult));
+        localStorage.setItem('mathSolverProblem', problem);
+        
+        // Save to calculation history
+        const newCalculation = {
+          id: Date.now(),
+          userId: 'user', // Static user identifier
+          problem: problem,
+          result: data.calculation.result,
+          operation: data.analysis.operation,
+          timestamp: new Date().toISOString(),
+          steps: Array.isArray(data.calculation.steps) 
+            ? data.calculation.steps 
+            : data.calculation.steps.split('\n').filter((step: string) => step.trim())
+        };
+        const updatedCalculations = [newCalculation, ...calculations];
+        setCalculations(updatedCalculations);
+        
+        // Save calculations to localStorage
+        localStorage.setItem('mathSolverCalculations', JSON.stringify(updatedCalculations));
       } else {
         throw new Error(data.error || 'Unknown error from server');
       }
@@ -225,7 +233,73 @@ const MathSolver = () => {
     }
   };
 
-  const userCalculations = calculations.filter(calc => calc.userId === currentUser?.username);
+  // Helper function to render LaTeX math with better text/math separation
+  const renderMath = (text: string) => {
+    try {
+      // Remove dollar signs and render the content as LaTeX
+      let cleanText = text;
+      
+      // If the text is wrapped in $...$ or $$...$$, remove them
+      cleanText = cleanText.replace(/^\$\$(.+)\$\$$/s, '$1');
+      cleanText = cleanText.replace(/^\$(.+)\$$/s, '$1');
+      
+      // Check if there are inline math expressions with $...$
+      if (cleanText.includes('$')) {
+        // Replace inline math $...$ with rendered KaTeX
+        let result = '';
+        let lastIndex = 0;
+        const regex = /\$([^$]+)\$/g;
+        let match;
+        
+        while ((match = regex.exec(cleanText)) !== null) {
+          // Add text before the match (as plain text)
+          const textBefore = cleanText.substring(lastIndex, match.index);
+          result += textBefore.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          
+          // Render the math part
+          try {
+            result += katex.renderToString(match[1], {
+              throwOnError: false,
+              displayMode: false,
+            });
+          } catch (e) {
+            result += match[0]; // Keep original if rendering fails
+          }
+          lastIndex = regex.lastIndex;
+        }
+        // Add remaining text (as plain text)
+        const remainingText = cleanText.substring(lastIndex);
+        result += remainingText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return result;
+      }
+      
+      // Check if it's mostly regular text with some LaTeX
+      // Count words vs LaTeX commands
+      const words = cleanText.split(/\s+/).filter(w => w.length > 0);
+      const latexCommands = (cleanText.match(/\\[a-zA-Z]+/g) || []).length;
+      
+      // If there are many words compared to LaTeX commands, it's mostly text
+      if (words.length > 5 && latexCommands < words.length / 3) {
+        // Don't render as LaTeX, return as plain text
+        return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+      
+      // If it contains LaTeX commands, render the whole thing
+      if (cleanText.includes('\\')) {
+        return katex.renderToString(cleanText, {
+          throwOnError: false,
+          displayMode: false,
+        });
+      }
+
+      // Otherwise return as-is (escaped for safety)
+      return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    } catch (e) {
+      console.error('Error rendering math:', e);
+      return text;
+    }
+  };
+
 
   const exampleProblems = [
     'Find the derivative of x^2 + 3x + 2',
@@ -235,18 +309,22 @@ const MathSolver = () => {
     'Find zeros of x^2 - 4'
   ];
 
-  const deleteCalculation = (id) => {
-    setCalculations(calculations.filter(calc => calc.id !== id));
+
+  const deleteCalculation = (id: number) => {
+    const updatedCalculations = calculations.filter(calc => calc.id !== id);
+    setCalculations(updatedCalculations);
+    // Save to localStorage
+    localStorage.setItem('mathSolverCalculations', JSON.stringify(updatedCalculations));
   };
 
   const ConnectionStatus = () => {
     const statusConfig = {
       checking: { color: 'bg-yellow-100 text-yellow-800 border-yellow-200', text: '🔄 Checking server connection...', icon: '🔄' },
       connected: { color: 'bg-green-100 text-green-800 border-green-200', text: '✅ Connected to server - Ready to solve!', icon: '✅' },
-      disconnected: { color: 'bg-red-100 text-red-800 border-red-200', text: '❌ Server unavailable - Using demo mode', icon: '❌' }
+      disconnected: { color: 'bg-red-100 text-red-800 border-red-200', text: '❌ AI service unavailable - Cannot solve problems', icon: '❌' }
     };
     
-    const config = statusConfig[connectionStatus];
+    const config = statusConfig[connectionStatus as keyof typeof statusConfig];
     
     return (
       <div className={`p-3 rounded-lg border text-sm font-medium flex items-center justify-between ${config.color}`}>
@@ -264,9 +342,23 @@ const MathSolver = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Mobile Overlay for Sidebar */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      
       {/* Sidebar */}
-      <div className={`${sidebarOpen ? 'w-80' : 'w-16'} bg-white border-r border-gray-200 transition-all duration-300 flex flex-col`}>
+      <div className={`
+        ${sidebarOpen ? 'w-80' : 'w-0 md:w-16'} 
+        fixed md:relative inset-y-0 left-0 z-50
+        bg-white border-r border-gray-200 
+        transition-all duration-300 flex flex-col overflow-y-auto
+        ${!sidebarOpen && 'md:flex hidden'}
+      `}>
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <div className={`flex items-center space-x-3 ${!sidebarOpen && 'hidden'}`}>
@@ -286,7 +378,10 @@ const MathSolver = () => {
         {/* Navigation */}
         <div className="p-4 space-y-2">
           <button
-            onClick={() => setActiveTab('solver')}
+            onClick={() => {
+              setActiveTab('solver');
+              if (window.innerWidth < 768) setSidebarOpen(false);
+            }}
             className={`w-full flex items-center space-x-3 p-3 rounded-lg transition-colors ${
               activeTab === 'solver' ? 'bg-red-50 text-red-600' : 'hover:bg-gray-100'
             }`}
@@ -295,17 +390,18 @@ const MathSolver = () => {
             {sidebarOpen && <span className="font-medium">Math Solver</span>}
           </button>
           
-          {currentUser && (
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`w-full flex items-center space-x-3 p-3 rounded-lg transition-colors ${
-                activeTab === 'history' ? 'bg-red-50 text-red-600' : 'hover:bg-gray-100'
-              }`}
-            >
-              <History className="w-5 h-5" />
-              {sidebarOpen && <span className="font-medium">History</span>}
-            </button>
-          )}
+          <button
+            onClick={() => {
+              setActiveTab('history');
+              if (window.innerWidth < 768) setSidebarOpen(false);
+            }}
+            className={`w-full flex items-center space-x-3 p-3 rounded-lg transition-colors ${
+              activeTab === 'history' ? 'bg-red-50 text-red-600' : 'hover:bg-gray-100'
+            }`}
+          >
+            <History className="w-5 h-5" />
+            {sidebarOpen && <span className="font-medium">History</span>}
+          </button>
         </div>
 
         {/* User Section */}
@@ -345,26 +441,43 @@ const MathSolver = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Mobile Header with Menu Button */}
+        <div className="md:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 hover:bg-gray-100 rounded-lg"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <div className="flex items-center space-x-2">
+            <div className="w-8 h-8 bg-red-500 rounded-lg flex items-center justify-center">
+              <Calculator className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-lg font-bold text-gray-800">Math Master</h1>
+          </div>
+          <div className="w-10"></div> {/* Spacer for centering */}
+        </div>
+
         {activeTab === 'solver' && (
-          <div className="flex-1 p-8 overflow-auto">
-            <div className="max-w-4xl mx-auto space-y-6">
+          <div className="flex-1 p-4 md:p-8 overflow-auto">
+            <div className="max-w-4xl mx-auto space-y-4 md:space-y-6">
               {/* Connection Status */}
               <ConnectionStatus />
               
               {/* Problem Input */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-                <h2 className="text-2xl font-bold text-gray-800 mb-6">Enter your math problem:</h2>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-8">
+                <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-4 md:mb-6">Enter your math problem:</h2>
                 <div className="space-y-4">
                   <textarea
                     value={problem}
                     onChange={(e) => setProblem(e.target.value)}
                     placeholder="Example: Find the derivative of x^2 + 3x + 2"
-                    className="w-full p-4 border border-gray-300 rounded-lg resize-none h-32 focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    className="w-full p-3 md:p-4 border border-gray-300 rounded-lg resize-none h-24 md:h-32 text-base focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   />
                   <button
                     onClick={solveProblem}
                     disabled={loading || !problem.trim()}
-                    className="px-8 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                    className="w-full md:w-auto px-6 md:px-8 py-3 md:py-3 text-base md:text-base bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
                   >
                     {loading ? 'Solving...' : '🚀 Solve Problem'}
                   </button>
@@ -372,14 +485,14 @@ const MathSolver = () => {
               </div>
 
               {/* Example Problems */}
-              <div className="bg-red-50 rounded-xl p-6">
-                <h3 className="font-semibold text-red-800 mb-3">Try these examples:</h3>
+              <div className="bg-red-50 rounded-xl p-4 md:p-6">
+                <h3 className="font-semibold text-red-800 mb-3 text-base md:text-base">Try these examples:</h3>
                 <div className="flex flex-wrap gap-2">
                   {exampleProblems.map((example, index) => (
                     <button
                       key={index}
                       onClick={() => setProblem(example)}
-                      className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm hover:bg-red-200 transition-colors"
+                      className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm md:text-sm hover:bg-red-200 transition-colors"
                     >
                       {example}
                     </button>
@@ -390,43 +503,69 @@ const MathSolver = () => {
               {/* Results */}
               {result && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="p-6 bg-green-50 border-b border-green-200">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-                        <span className="text-white text-sm">✓</span>
+                  <div className="p-4 md:p-6 bg-green-50 border-b border-green-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                          <span className="text-white text-sm">✓</span>
+                        </div>
+                        <h3 className="text-base md:text-lg font-semibold text-green-800">Solution</h3>
                       </div>
-                      <h3 className="text-lg font-semibold text-green-800">Solution</h3>
+                      <button
+                        onClick={() => {
+                          setResult(null);
+                          setProblem('');
+                          localStorage.removeItem('mathSolverResult');
+                          localStorage.removeItem('mathSolverProblem');
+                        }}
+                        className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 transition-colors"
+                      >
+                        Clear
+                      </button>
                     </div>
                   </div>
                   
-                  <div className="p-6 space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+                    <div className="grid grid-cols-1 gap-4 md:gap-6">
                       <div>
-                        <h4 className="font-medium text-gray-700 mb-2">Problem:</h4>
-                        <p className="text-gray-900 bg-gray-50 p-3 rounded-lg">{result.originalProblem}</p>
+                        <h4 className="font-medium text-gray-700 mb-2 text-sm md:text-base">Problem:</h4>
+                        <p className="text-gray-900 bg-gray-50 p-3 rounded-lg text-sm md:text-base">{result.originalProblem}</p>
                       </div>
                       <div>
-                        <h4 className="font-medium text-gray-700 mb-2">Result:</h4>
-                        <p className="text-xl font-mono font-bold text-red-600 bg-red-50 p-3 rounded-lg">
-                          {result.calculation.result}
-                        </p>
+                        <h4 className="font-medium text-gray-700 mb-2 text-sm md:text-base">Result:</h4>
+                        <div 
+                          className="text-lg md:text-xl font-bold text-red-600 bg-red-50 p-3 rounded-lg"
+                          dangerouslySetInnerHTML={{ __html: renderMath(result.calculation.result) }}
+                        />
                       </div>
                     </div>
 
                     <div>
-                      <h4 className="font-medium text-gray-700 mb-3 flex items-center space-x-2">
+                      <h4 className="font-medium text-gray-700 mb-3 flex items-center space-x-2 text-sm md:text-base">
                         <Lightbulb className="w-4 h-4" />
                         <span>Explanation:</span>
                       </h4>
-                      <p className="text-gray-700 bg-yellow-50 p-4 rounded-lg leading-relaxed">
-                        {result.explanation}
-                      </p>
+                      <div 
+                        className="text-gray-700 bg-yellow-50 p-5 rounded-lg leading-relaxed"
+                        dangerouslySetInnerHTML={{ 
+                          __html: renderMath(result.explanation)
+                            .split(/\*\*/)
+                            .map((part, index) => {
+                              // Bold text between ** markers
+                              if (index % 2 === 1) {
+                                return `<strong class="font-semibold text-gray-900">${part}</strong>`;
+                              }
+                              return part;
+                            })
+                            .join('')
+                        }}
+                      />
                     </div>
 
                     <div>
                       <button
                         onClick={() => setExpandedSteps(!expandedSteps)}
-                        className="flex items-center space-x-2 font-medium text-red-600 hover:text-red-700 mb-3"
+                        className="flex items-center space-x-2 font-medium text-red-600 hover:text-red-700 mb-3 text-sm md:text-base"
                       >
                         {expandedSteps ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                         <BookOpen className="w-4 h-4" />
@@ -434,41 +573,140 @@ const MathSolver = () => {
                       </button>
                       
                       {expandedSteps && (
-                        <div className="bg-gray-50 rounded-lg p-6">
-                          <div className="space-y-6">
+                        <div className="bg-gray-50 rounded-lg p-3 md:p-6 border border-gray-200">
+                          <div className="space-y-4 md:space-y-6">
                             {/* Problem Statement */}
-                            <div className="border-b border-gray-200 pb-4">
-                              <h4 className="text-lg font-semibold text-gray-800 mb-2">Let's solve your equation step-by-step.</h4>
-                              <div className="text-xl font-mono text-gray-900 bg-white p-3 rounded border">
+                            <div className="bg-white rounded-lg p-3 md:p-5 border-l-4 border-red-500">
+                              <h4 className="text-xs md:text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Question</h4>
+                              <div className="text-sm md:text-lg text-gray-900 leading-relaxed">
                                 {result.originalProblem}
                               </div>
                             </div>
                             
+                            {/* Solution Header */}
+                            <div className="bg-white rounded-lg p-3 md:p-5 border-l-4 border-blue-500">
+                              <h4 className="text-xs md:text-sm font-semibold text-gray-500 uppercase tracking-wide">Solution</h4>
+                            </div>
+                            
                             {/* Steps */}
-                            <div className="space-y-5">
+                            <div className="space-y-3 md:space-y-6">
                               {(Array.isArray(result.calculation.steps) 
                                 ? result.calculation.steps 
-                                : result.calculation.steps.split('\n').filter(step => step.trim())
-                              ).map((step, index) => {
-                                // Clean the step content by removing any leading numbers/dots
-                                const cleanStep = step.replace(/^\d+\.\s*/, '').trim();
+                                : result.calculation.steps.split('\n').filter((step: string) => step.trim())
+                              ).map((step: string, index: number) => {
+                                // Parse step - separate the equation from the explanation
+                                // Remove the step prefix from AI to get clean content
+                                let cleanedStep = step.replace(/^(Step\s+)?\d+[a-z]?[\.:]\s*/i, '').trim();
+                                
+                                let stepTitle = '';
+                                let contentToDisplay = '';
+                                let textExplanation = '';
+                                
+                                // Detect if this seems like a sub-step (shorter, starts with specific keywords, or is just math)
+                                const isLikelySubStep = cleanedStep.length < 50 && 
+                                  (cleanedStep.match(/^(Here|So|Thus|Therefore|Use|Apply|Now)/i) || 
+                                   !cleanedStep.includes(':') && /[\$\\=]/.test(cleanedStep));
+                                
+                                if (cleanedStep.includes(':')) {
+                                  // Format: "Description: Content"
+                                  const colonIndex = cleanedStep.indexOf(':');
+                                  let beforeColon = cleanedStep.substring(0, colonIndex).trim();
+                                  let afterColon = cleanedStep.substring(colonIndex + 1).trim();
+                                  
+                                  // Check if the part before colon contains LaTeX or math symbols
+                                  const titleHasMath = /\$|\\int|\\frac|\^|_/.test(beforeColon);
+                                  
+                                  if (titleHasMath) {
+                                    // The "title" contains math, so extract the actual text part
+                                    // Example: "Integrate the first term, $\int 2x dx$"
+                                    const textMatch = beforeColon.match(/^([^$\\]+?)(?:[,$]|\\)/);
+                                    if (textMatch) {
+                                      stepTitle = textMatch[1].trim();
+                                      // Put the math part into content along with what's after colon
+                                      const mathInTitle = beforeColon.substring(textMatch[1].length).trim();
+                                      contentToDisplay = afterColon ? `${mathInTitle} ${afterColon}` : mathInTitle;
+                                    } else {
+                                      stepTitle = 'Apply the rule';
+                                      contentToDisplay = `${beforeColon} ${afterColon}`;
+                                    }
+                                  } else {
+                                    // Normal case: text before colon, content after
+                                    stepTitle = beforeColon;
+                                    
+                                    // Check if afterColon has both explanation text and math
+                                    // Look for period followed by LaTeX or just period at sentence end
+                                    const periodMatch = afterColon.match(/^([^$.]+?\.)(.+)$/);
+                                    if (periodMatch && (periodMatch[2].includes('\\') || periodMatch[2].includes('$'))) {
+                                      textExplanation = periodMatch[1].trim();
+                                      contentToDisplay = periodMatch[2].trim();
+                                    } else {
+                                      contentToDisplay = afterColon;
+                                    }
+                                  }
+                                } else {
+                                  // No colon - check if it's mostly text or mostly math
+                                  const hasLaTeX = /\$|\\int|\\frac|\\/.test(cleanedStep);
+                                  const hasMathSymbols = /[=+\-*/()^]/.test(cleanedStep);
+                                  
+                                  if (!hasLaTeX && !hasMathSymbols && cleanedStep.length > 20) {
+                                    // It's explanatory text only
+                                    stepTitle = cleanedStep;
+                                    contentToDisplay = '';
+                                  } else if (hasLaTeX) {
+                                    // Contains LaTeX - try to separate text from math
+                                    const textMatch = cleanedStep.match(/^([^$\\]+?)(?:[,$]|\\)/);
+                                    if (textMatch && textMatch[1].length > 10) {
+                                      stepTitle = textMatch[1].trim();
+                                      contentToDisplay = cleanedStep.substring(textMatch[1].length).trim();
+                                    } else {
+                                      stepTitle = 'Calculation';
+                                      contentToDisplay = cleanedStep;
+                                    }
+                                  } else {
+                                    // It's math content
+                                    stepTitle = 'Calculation';
+                                    contentToDisplay = cleanedStep;
+                                  }
+                                }
                                 
                                 return (
-                                  <div key={index} className="space-y-2">
-                                    <div className="font-semibold text-gray-800">
-                                      Step {index + 1}: {cleanStep.includes(':') ? cleanStep.split(':')[1].trim() : cleanStep}
+                                  <div key={index} className={`bg-white rounded-lg p-3 md:p-5 shadow-sm border border-gray-200 ${isLikelySubStep ? 'ml-4 md:ml-8' : ''}`}>
+                                    <div className="font-bold text-gray-900 mb-2 md:mb-3 text-sm md:text-base">
+                                      <span>Step {index + 1}: </span>
+                                      <span dangerouslySetInnerHTML={{ __html: renderMath(stepTitle) }} />
                                     </div>
+                                    {(textExplanation || contentToDisplay) && (
+                                      <div className="pl-3 md:pl-4 border-l-2 border-gray-300 space-y-2">
+                                        {textExplanation && (
+                                          <div 
+                                            className="text-xs md:text-sm text-gray-700 italic"
+                                            dangerouslySetInnerHTML={{ __html: renderMath(textExplanation) }}
+                                          />
+                                        )}
+                                        {contentToDisplay && (
+                                          <div 
+                                            className="text-sm md:text-base bg-gray-50 p-2 md:p-3 rounded text-gray-800 overflow-x-auto"
+                                            dangerouslySetInnerHTML={{ __html: renderMath(contentToDisplay) }}
+                                          />
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}
                             </div>
                             
                             {/* Final Answer */}
-                            <div className="border-t border-gray-200 pt-4">
-                              <div className="font-semibold text-gray-800 mb-2">Answer:</div>
-                              <div className="text-xl font-mono font-bold text-red-600 bg-white p-4 rounded border-2 border-red-200">
-                                {result.calculation.result}
+                            <div className="bg-gradient-to-r from-red-50 to-pink-50 rounded-lg p-6 border-2 border-red-300 shadow-sm">
+                              <div className="font-bold text-gray-900 mb-3 text-base">
+                                Step {(Array.isArray(result.calculation.steps) 
+                                  ? result.calculation.steps.length 
+                                  : result.calculation.steps.split('\n').filter((s: string) => s.trim()).length) + 1}: Final Answer
                               </div>
+                              <div 
+                                className="text-2xl font-bold text-red-600 bg-white p-4 rounded border-2 border-red-400 text-center"
+                                dangerouslySetInnerHTML={{ __html: renderMath(result.calculation.result) }}
+                              />
                             </div>
                           </div>
                         </div>
@@ -481,55 +719,54 @@ const MathSolver = () => {
           </div>
         )}
 
-        {activeTab === 'history' && currentUser && (
-          <div className="flex-1 p-8 overflow-auto">
+        {activeTab === 'history' && (
+          <div className="flex-1 p-4 md:p-8 overflow-auto">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl font-bold text-gray-800 mb-6">Calculation History</h2>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-4 md:mb-6">Calculation History</h2>
               
-              {userCalculations.length === 0 ? (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-                  <History className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-500 mb-2">No calculations yet</h3>
-                  <p className="text-gray-400">Start solving problems to see your history here!</p>
+              {calculations.length === 0 ? (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 md:p-12 text-center">
+                  <History className="w-12 h-12 md:w-16 md:h-16 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-base md:text-lg font-medium text-gray-500 mb-2">No calculations yet</h3>
+                  <p className="text-sm md:text-base text-gray-400">Start solving problems to see your history here!</p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {userCalculations.map((calc) => (
-                    <div key={calc.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex-1">
-                          <h3 className="font-medium text-gray-900 mb-1">{calc.problem}</h3>
-                          <div className="flex items-center space-x-4 text-sm text-gray-500">
+                <div className="space-y-3 md:space-y-4">
+                  {calculations.map((calc) => (
+                    <div key={calc.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 md:p-6">
+                      <div className="flex items-start justify-between mb-3 md:mb-4">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-gray-900 mb-1 text-sm md:text-base truncate">{calc.problem}</h3>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 gap-2 sm:gap-0 text-xs md:text-sm text-gray-500">
                             <span className="flex items-center space-x-1">
-                              <Clock className="w-4 h-4" />
-                              <span>{new Date(calc.timestamp).toLocaleString()}</span>
+                              <Clock className="w-3 h-3 md:w-4 md:h-4" />
+                              <span className="text-xs md:text-sm">{new Date(calc.timestamp).toLocaleDateString()}</span>
                             </span>
-                            <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs">
+                            <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs w-fit">
                               {calc.operation}
                             </span>
                           </div>
                         </div>
                         <button
                           onClick={() => deleteCalculation(calc.id)}
-                          className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                          className="p-2 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                       
-                      <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                        <p className="font-mono text-lg text-red-600 font-semibold">{calc.result}</p>
+                      <div className="bg-gray-50 rounded-lg p-3 md:p-4 mb-3 md:mb-4">
+                        <p className="font-mono text-base md:text-lg text-red-600 font-semibold break-words">{calc.result}</p>
                       </div>
                       
-                      <details className="text-sm">
+                      <details className="text-xs md:text-sm">
                         <summary className="cursor-pointer font-medium text-gray-700 hover:text-gray-900">
                           View Steps
                         </summary>
-                        <div className="mt-3 space-y-2 pl-4">
+                        <div className="mt-3 space-y-2 pl-2 md:pl-4">
                           {(Array.isArray(calc.steps) ? calc.steps : [calc.steps]).map((step, index) => (
-                            <div key={index} className="flex space-x-2 text-gray-600">
-                              <span className="font-medium">{index + 1}.</span>
-                              <span>{step}</span>
+                            <div key={index} className="text-gray-600 text-xs md:text-sm break-words">
+                              {step}
                             </div>
                           ))}
                         </div>

@@ -1,3 +1,6 @@
+// Load environment variables from .env file
+require('dotenv').config();
+
 const express = require('express');
 const axios = require('axios');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -121,36 +124,51 @@ app.post('/solve', async (req, res) => {
 
     // Enhanced Gemini prompt for better structured responses
     const geminiPrompt = `
-You are a mathematical expert. Solve this math problem step by step and provide a clear, structured response.
+You are a mathematical expert. Solve this math problem with clear, well-formatted steps.
 
 Problem: "${problem}"
 
+CRITICAL FORMATTING RULES:
+1. Provide 3-6 clear steps maximum
+2. Each step MUST be a COMPLETE sentence followed by a colon and the mathematical expression
+3. NEVER leave step descriptions incomplete or hanging
+4. Use proper LaTeX syntax wrapped in $ signs for all math
+
 Please provide your response in this EXACT format:
-OPERATION: [the mathematical operation needed - examples: derivative, integral, simplify, factor, solve, find_zeros]
-EXPRESSION: [the clean mathematical expression being worked with]
-RESULT: [the final answer - for derivatives, provide the derivative expression like "2x + 3"]
-STEPS: [detailed step-by-step solution with numbered steps]
+OPERATION: [the mathematical operation - examples: derivative, integral, simplify, factor, solve, find_zeros]
+EXPRESSION: [the mathematical expression]
+RESULT: [the final answer only - just the mathematical expression or value]
+STEPS: [3-6 concise numbered steps]
 
-Important guidelines:
-- For derivatives: Show the derivative as an algebraic expression (e.g., "2x + 3", not just a number)
-- For integration: Include the constant of integration (+C) 
-- For factoring: Show the factored form clearly
-- For simplification: Show the simplified expression
-- For finding zeros/roots: List all solutions
-- Always show your work step by step with clear explanations
-- Use proper mathematical notation
+Step formatting rules:
+- Format: "Complete description: $mathematical\\_expression$"
+- Example: "Apply the power rule: $d/dx(x^2) = 2x$"
+- Example: "Rewrite the middle term using these two numbers: $x^2 + 2x + 3x + 6$"
+- NEVER end a description with an open parenthesis - always complete the sentence
+- Keep descriptions clear and self-contained
+- Use $ signs around ALL mathematical expressions
+- Maximum 6 steps total
 
-Example for derivative of x^2 + 3x + 2:
+Example for "Factor x^2 + 5x + 6":
+OPERATION: factor
+EXPRESSION: x^2 + 5x + 6
+RESULT: (x + 2)(x + 3)
+STEPS:
+1. Identify the quadratic form: $ax^2 + bx + c$ where $a=1$, $b=5$, $c=6$
+2. Find two numbers that multiply to 6 and add to 5: The numbers are 2 and 3
+3. Write the factored form: $(x + 2)(x + 3)$
+
+Example for "Find derivative of x^2 + 3x + 2":
 OPERATION: derivative
-EXPRESSION: x^2 + 3x + 2  
+EXPRESSION: x^2 + 3x + 2
 RESULT: 2x + 3
-STEPS: 
-1. Apply power rule to x^2: derivative is 2x^1 = 2x
-2. Apply power rule to 3x: derivative is 3(1)x^0 = 3
-3. Derivative of constant 2 is 0
-4. Combine terms: 2x + 3 + 0 = 2x + 3
+STEPS:
+1. Apply the sum rule to separate terms: $d/dx(x^2 + 3x + 2) = d/dx(x^2) + d/dx(3x) + d/dx(2)$
+2. Apply power rule to each term: d/dx(x^2) = 2x, d/dx(3x) = 3, d/dx(2) = 0
+3. Combine results: 2x + 3 + 0 = 2x + 3
 
-Now solve the given problem following this format exactly.
+Now solve: "${problem}"
+Keep it concise with 3-6 clear steps only.
 `;
 
     const geminiResult = await model.generateContent(geminiPrompt);
@@ -277,12 +295,15 @@ Keep the explanation concise but informative, around 3-4 sentences.
 
 // Enhanced health check with detailed diagnostics
 app.get('/health', (req, res) => {
+  // Check if AI is available - this is REQUIRED for the app to function
+  const isAIAvailable = !!process.env.GEMINI_API_KEY && !!model;
+  
   const healthData = {
-    status: 'healthy',
+    status: isAIAvailable ? 'healthy' : 'unhealthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     services: {
-      gemini: !!process.env.GEMINI_API_KEY ? 'configured' : 'missing_api_key',
+      gemini: isAIAvailable ? 'configured' : 'missing_api_key',
       geminiModel: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
       cors: 'enabled',
       method: 'gemini-ai-only'
@@ -303,6 +324,18 @@ app.get('/health', (req, res) => {
   };
   
   console.log('🏥 Health check requested from origin:', req.headers.origin);
+  console.log(`🏥 AI Status: ${isAIAvailable ? '✅ Available' : '❌ Unavailable'}`);
+  
+  // Return 503 Service Unavailable if AI is not configured
+  // This makes sense because without AI, the service cannot fulfill its purpose
+  if (!isAIAvailable) {
+    return res.status(503).json({
+      ...healthData,
+      error: 'AI service unavailable',
+      message: 'Gemini API is not configured. The math solver requires AI to function.'
+    });
+  }
+  
   res.json(healthData);
 });
 
