@@ -746,7 +746,10 @@ const MathSolver = () => {
                       </div>
                       
                       <div className="bg-gray-50 rounded-lg p-3 md:p-4 mb-3 md:mb-4">
-                        <p className="font-mono text-base md:text-lg text-red-600 font-semibold break-words">{calc.result}</p>
+                        <div 
+                          className="font-mono text-base md:text-lg text-red-600 font-semibold break-words"
+                          dangerouslySetInnerHTML={{ __html: renderMath(calc.result) }}
+                        />
                       </div>
                       
                       <details className="text-xs md:text-sm">
@@ -755,9 +758,11 @@ const MathSolver = () => {
                         </summary>
                         <div className="mt-3 space-y-2 pl-2 md:pl-4">
                           {(Array.isArray(calc.steps) ? calc.steps : [calc.steps]).map((step, index) => (
-                            <div key={index} className="text-gray-600 text-xs md:text-sm break-words">
-                              {step}
-                            </div>
+                            <div 
+                              key={index} 
+                              className="text-gray-600 text-xs md:text-sm break-words"
+                              dangerouslySetInnerHTML={{ __html: renderMath(step) }}
+                            />
                           ))}
                         </div>
                       </details>
