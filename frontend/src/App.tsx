@@ -236,24 +236,16 @@ const MathSolver = () => {
   // Helper function to render LaTeX math with better text/math separation
   const renderMath = (text: string) => {
     try {
-      // Remove dollar signs and render the content as LaTeX
-      let cleanText = text;
-      
-      // If the text is wrapped in $...$ or $$...$$, remove them
-      cleanText = cleanText.replace(/^\$\$(.+)\$\$$/s, '$1');
-      cleanText = cleanText.replace(/^\$(.+)\$$/s, '$1');
-      
-      // Check if there are inline math expressions with $...$
-      if (cleanText.includes('$')) {
-        // Replace inline math $...$ with rendered KaTeX
+      // If the text contains dollar signs, process them as inline math
+      if (text.includes('$')) {
         let result = '';
         let lastIndex = 0;
         const regex = /\$([^$]+)\$/g;
         let match;
         
-        while ((match = regex.exec(cleanText)) !== null) {
+        while ((match = regex.exec(text)) !== null) {
           // Add text before the match (as plain text)
-          const textBefore = cleanText.substring(lastIndex, match.index);
+          const textBefore = text.substring(lastIndex, match.index);
           result += textBefore.replace(/</g, '&lt;').replace(/>/g, '&gt;');
           
           // Render the math part
@@ -263,33 +255,31 @@ const MathSolver = () => {
               displayMode: false,
             });
           } catch (e) {
+            console.error('KaTeX error:', e);
             result += match[0]; // Keep original if rendering fails
           }
           lastIndex = regex.lastIndex;
         }
         // Add remaining text (as plain text)
-        const remainingText = cleanText.substring(lastIndex);
+        const remainingText = text.substring(lastIndex);
         result += remainingText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
         return result;
       }
       
-      // Check if it's mostly regular text with some LaTeX
-      // Count words vs LaTeX commands
-      const words = cleanText.split(/\s+/).filter(w => w.length > 0);
-      const latexCommands = (cleanText.match(/\\[a-zA-Z]+/g) || []).length;
-      
-      // If there are many words compared to LaTeX commands, it's mostly text
-      if (words.length > 5 && latexCommands < words.length / 3) {
-        // Don't render as LaTeX, return as plain text
-        return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      }
-      
-      // If it contains LaTeX commands, render the whole thing
-      if (cleanText.includes('\\')) {
-        return katex.renderToString(cleanText, {
-          throwOnError: false,
-          displayMode: false,
-        });
+      // If it contains LaTeX commands but no dollar signs, wrap it and render
+      if (text.includes('\\int') || text.includes('\\frac') || text.includes('\\cdot') || 
+          text.includes('^') || text.includes('_') || text.match(/\\[a-zA-Z]+/)) {
+        // This is LaTeX math without $ delimiters - render it
+        try {
+          return katex.renderToString(text, {
+            throwOnError: false,
+            displayMode: false,
+          });
+        } catch (e) {
+          console.error('KaTeX error rendering LaTeX:', e);
+          // If rendering fails, return as plain text
+          return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
       }
 
       // Otherwise return as-is (escaped for safety)
