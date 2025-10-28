@@ -12,7 +12,8 @@ const MathSolver = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [authForm, setAuthForm] = useState({ username: '', password: '', email: '' });
   const [showPassword, setShowPassword] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Start with sidebar closed on mobile, open on desktop
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
   const [activeTab, setActiveTab] = useState('solver');
   const [serverConnected, setServerConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('checking');
@@ -449,8 +450,9 @@ const MathSolver = () => {
         </div>
 
         {activeTab === 'solver' && (
-          <div className="flex-1 p-4 md:p-8 overflow-auto">
-            <div className="max-w-4xl mx-auto space-y-4 md:space-y-6">
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 md:p-8">
+              <div className="max-w-4xl mx-auto space-y-4 md:space-y-6 pb-8">
               {/* Connection Status */}
               <ConnectionStatus />
               
@@ -705,13 +707,15 @@ const MathSolver = () => {
                   </div>
                 </div>
               )}
+              </div>
             </div>
           </div>
         )}
 
         {activeTab === 'history' && (
-          <div className="flex-1 p-4 md:p-8 overflow-auto">
-            <div className="max-w-4xl mx-auto">
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 md:p-8">
+              <div className="max-w-4xl mx-auto pb-8">
               <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-4 md:mb-6">Calculation History</h2>
               
               {calculations.length === 0 ? (
@@ -770,6 +774,7 @@ const MathSolver = () => {
                   ))}
                 </div>
               )}
+              </div>
             </div>
           </div>
         )}
