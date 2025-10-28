@@ -8,9 +8,15 @@ html, body {
   padding: 0;
   height: 100%;
   overflow: hidden;
+  /* Fix for mobile viewport height (accounts for browser chrome) */
+  height: 100dvh; /* Use dynamic viewport height for modern browsers */
+  height: -webkit-fill-available; /* Fallback for older iOS Safari */
 }
 
 #root {
   height: 100%;
   overflow: hidden;
+  /* Fix for mobile viewport height */
+  height: 100dvh;
+  height: -webkit-fill-available;
 }
