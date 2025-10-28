@@ -331,19 +331,17 @@ const MathSolver = () => {
           )}
         </div>
         
-        {/* Backend Cold Start Notice */}
-        {(connectionStatus === 'checking' || connectionStatus === 'disconnected') && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs md:text-sm text-blue-800">
-            <div className="flex items-start space-x-2">
-              <span className="text-base">ℹ️</span>
-              <div>
-                <strong className="font-semibold">Note:</strong> The backend server is hosted on Render's free tier and may take 
-                <strong className="font-semibold"> 30-60 seconds</strong> to start up if it hasn't been used recently. 
-                Please wait a moment while the server wakes up. Thank you for your patience! 🚀
-              </div>
+        {/* Backend Cold Start Notice - Always Visible */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs md:text-sm text-blue-800">
+          <div className="flex items-start space-x-2">
+            <span className="text-base">ℹ️</span>
+            <div>
+              <strong className="font-semibold">Note:</strong> The backend server is hosted on Render's free tier and may take 
+              <strong className="font-semibold"> 30-60 seconds</strong> to start up if it hasn't been used recently. 
+              Please wait a moment while the server wakes up. Thank you for your patience!
             </div>
           </div>
-        )}
+        </div>
       </div>
     );
   };
