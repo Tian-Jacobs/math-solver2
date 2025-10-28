@@ -318,15 +318,31 @@ const MathSolver = () => {
     const config = statusConfig[connectionStatus as keyof typeof statusConfig];
     
     return (
-      <div className={`p-3 rounded-lg border text-sm font-medium flex items-center justify-between ${config.color}`}>
-        <span>{config.text}</span>
-        {connectionStatus === 'disconnected' && (
-          <button 
-            onClick={testServerConnection}
-            className="ml-2 px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600"
-          >
-            Retry
-          </button>
+      <div className="space-y-2">
+        <div className={`p-3 rounded-lg border text-sm font-medium flex items-center justify-between ${config.color}`}>
+          <span>{config.text}</span>
+          {connectionStatus === 'disconnected' && (
+            <button 
+              onClick={testServerConnection}
+              className="ml-2 px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+        
+        {/* Backend Cold Start Notice */}
+        {(connectionStatus === 'checking' || connectionStatus === 'disconnected') && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs md:text-sm text-blue-800">
+            <div className="flex items-start space-x-2">
+              <span className="text-base">ℹ️</span>
+              <div>
+                <strong className="font-semibold">Note:</strong> The backend server is hosted on Render's free tier and may take 
+                <strong className="font-semibold"> 30-60 seconds</strong> to start up if it hasn't been used recently. 
+                Please wait a moment while the server wakes up. Thank you for your patience! 🚀
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );
