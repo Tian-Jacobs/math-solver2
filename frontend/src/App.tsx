@@ -347,7 +347,7 @@ const MathSolver = () => {
         ${sidebarOpen ? 'w-80' : 'w-0 md:w-16'} 
         fixed md:relative inset-y-0 left-0 z-50
         bg-white border-r border-gray-200 
-        transition-all duration-300 flex flex-col overflow-y-auto
+        transition-all duration-300 flex flex-col overflow-y-auto overscroll-none
         ${!sidebarOpen && 'md:flex hidden'}
       `}>
         {/* Header */}
@@ -450,7 +450,7 @@ const MathSolver = () => {
         </div>
 
         {activeTab === 'solver' && (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto overscroll-none">
             <div className="p-4 md:p-8">
               <div className="max-w-4xl mx-auto space-y-4 md:space-y-6 pb-8">
               {/* Connection Status */}
@@ -713,7 +713,7 @@ const MathSolver = () => {
         )}
 
         {activeTab === 'history' && (
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto overscroll-none">
             <div className="p-4 md:p-8">
               <div className="max-w-4xl mx-auto pb-8">
               <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-4 md:mb-6">Calculation History</h2>

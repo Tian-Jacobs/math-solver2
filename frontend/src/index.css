@@ -11,6 +11,11 @@ html, body {
   /* Fix for mobile viewport height (accounts for browser chrome) */
   height: 100dvh; /* Use dynamic viewport height for modern browsers */
   height: -webkit-fill-available; /* Fallback for older iOS Safari */
+  /* Prevent overscroll bounce/rubber-band effect on mobile */
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  position: fixed;
+  width: 100%;
 }
 
 #root {
@@ -19,4 +24,6 @@ html, body {
   /* Fix for mobile viewport height */
   height: 100dvh;
   height: -webkit-fill-available;
+  /* Prevent overscroll bounce */
+  overscroll-behavior: none;
 }
